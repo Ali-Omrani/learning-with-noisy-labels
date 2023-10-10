@@ -1,11 +1,11 @@
 import torch
 
-from .seqeval_modified import f1_score, accuracy_score, recall_score, precision_score, classification_report
+from seqeval_modified import f1_score, accuracy_score, recall_score, precision_score, classification_report
 from sklearn.metrics import accuracy_score as sk_accuracy_score
 from sklearn.metrics import precision_score as sk_precision_score
 from sklearn.metrics import recall_score as sk_recall_score
 from sklearn.metrics import fbeta_score as sk_fbeta_score
-from .wnuteval import doc_to_toks, doc_to_entities, fmt_results, get_tagged_entities, calc_results, get_tags, filter_entities
+from wnuteval import doc_to_toks, doc_to_entities, fmt_results, get_tagged_entities, calc_results, get_tags, filter_entities
 
 
 NER_LABELS = ('O', 'I-LOC', 'I-PER', 'I-MISC', 'I-ORG', 'B-LOC', 'B-PER', 'B-MISC', 'B-ORG')
@@ -153,7 +153,7 @@ def get_wnut_metrics(y_true, y_pred, digits=4, average="micro"):
     }
 
 
-def get_nli_metrics(y_true, y_pred, digits=4):
+def get_nli_metrics(y_true, y_pred, digits=4, skipreport=False):
     y_true = y_true[0]
     y_pred = y_pred[0]
     TPs = [0., 0., 0.]

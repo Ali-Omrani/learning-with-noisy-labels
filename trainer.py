@@ -1,5 +1,5 @@
 from __future__ import absolute_import, division, print_function
-
+import IPython
 import wandb
 
 from consts import get_data_dirs_cardinal, get_processors, get_memories, get_reporters
@@ -24,6 +24,8 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, Tens
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 
+
+MISC_LOC = False # flag not to log the LOC and MISC
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
@@ -103,7 +105,6 @@ class Trainer:
         self.n_gpu = n_gpu
         self.noise_addition = noise_addition
         self.architecture_name = self.model_name.split("-")[0].split("/")[-1].upper()
-
         self.wandber = Wandber(wandb)
 
         self.eval_dataloader = None
@@ -282,7 +283,6 @@ class Trainer:
                                                    force_recompute=False,
                                                    label_noise_addition=self.noise_addition)
             total = train_dataloader.dataset.tensors[0].shape[0]
-
             for epoch in trange(start_epoch, int(self.num_train_epochs) + start_epoch, desc="Epoch"):
                 tr_loss = 0
                 nb_tr_examples, nb_tr_steps = 0, 0
@@ -363,9 +363,9 @@ class Trainer:
                         with torch.no_grad():
                             lm = {v:k for k,v in self.label_map.items()}
                             entropy = lambda x: -(x * x.log()).sum().item()
-                            correct_logits = logits.max(2).values[(logits.argmax(2) == label_ids) & (label_ids != lm["[PAD]"]) & (label_ids != lm["[SEP]"]) & (label_ids != lm["[CLS]"])]
-                            incorrect_logits = logits.max(2).values[(logits.argmax(2) != label_ids) & (label_ids != lm["[PAD]"]) & (label_ids != lm["[SEP]"]) & (label_ids != lm["[CLS]"])]
-                            valid_logits = logits.max(2).values[(label_ids != lm["[PAD]"]) & (label_ids != lm["[SEP]"]) & (label_ids != lm["[CLS]"])]
+                            correct_logits = logits.max(2).values[(logits.argmax(2) == label_ids) & (label_ids != lm.get("[PAD]")) & (label_ids != lm.get("[SEP]")) & (label_ids != lm.get("[CLS]"))]
+                            incorrect_logits = logits.max(2).values[(logits.argmax(2) != label_ids) & (label_ids != lm.get("[PAD]")) & (label_ids != lm.get("[SEP]")) & (label_ids != lm.get("[CLS]"))]
+                            valid_logits = logits.max(2).values[(label_ids != lm.get("[PAD]")) & (label_ids != lm.get("[SEP]")) & (label_ids != lm.get("[CLS]"))]
 
                             summed_weights = 0
                             summed_gradients = 0
@@ -415,12 +415,14 @@ class Trainer:
                             y_pred_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_pred]
                             y_pred_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_pred]
 
-                            metrics_loc = self.reporter(y_true_loc, y_pred_loc, skipreport=True)
-                            metrics_misc = self.reporter(y_true_misc, y_pred_misc, skipreport=True)
+                            if MISC_LOC:
 
-                            self.wandber.log_training_step({"locmetricstrain_" + k: v for k, v in metrics_loc.items() if k != "report"},
+                                metrics_loc = self.reporter(y_true_loc, y_pred_loc, skipreport=True)
+                                metrics_misc = self.reporter(y_true_misc, y_pred_misc, skipreport=True)
+
+                                self.wandber.log_training_step({"locmetricstrain_" + k: v for k, v in metrics_loc.items() if k != "report"},
                                                            step=total * epoch + step * self.train_batch_size)
-                            self.wandber.log_training_step({"miscmetricstrain_" + k: v for k, v in metrics_misc.items() if k != "report"},
+                                self.wandber.log_training_step({"miscmetricstrain_" + k: v for k, v in metrics_misc.items() if k != "report"},
                                                            step=total * epoch + step * self.train_batch_size)
 
                     if ((global_step+1) % (2 * self.print_every) == 0 or global_step == 1) and self.do_eval:
@@ -434,26 +436,27 @@ class Trainer:
                             self.eval_on = "dev"
                         self.model.train()
 
-                    print(f"before del - {torch.cuda.memory_allocated()}")
+                    # print(f"before del - {torch.cuda.memory_allocated()}")
                     del input_ids, input_mask, segment_ids, label_ids, valid_ids, \
                         l_mask, noise_mask, logits, loss
 
                     torch.cuda.empty_cache()
 
+                if MISC_LOC:
+                    metrics_loc_all = self.reporter(y_true_loc_all, y_pred_loc_all, skipreport=True)
+                    metrics_misc_all = self.reporter(y_true_misc_all, y_pred_misc_all, skipreport=True)
 
-                metrics_loc_all = self.reporter(y_true_loc_all, y_pred_loc_all, skipreport=True)
-                metrics_misc_all = self.reporter(y_true_misc_all, y_pred_misc_all, skipreport=True)
-
-                self.wandber.log_training_step(
-                    {"locmetricstrain_all_" + k: v for k, v in metrics_loc_all.items() if k != "report"},
-                    step=total * epoch + step * self.train_batch_size)
-                self.wandber.log_training_step(
-                    {"miscmetricstrain_all_" + k: v for k, v in metrics_misc_all.items() if k != "report"},
-                    step=total * epoch + step * self.train_batch_size)
+                    self.wandber.log_training_step(
+                        {"locmetricstrain_all_" + k: v for k, v in metrics_loc_all.items() if k != "report"},
+                        step=total * epoch + step * self.train_batch_size)
+                    self.wandber.log_training_step(
+                        {"miscmetricstrain_all_" + k: v for k, v in metrics_misc_all.items() if k != "report"},
+                        step=total * epoch + step * self.train_batch_size)
 
 
                 eval_metrics = self.eval(load_model=False, intermediate=True, epoch=epoch,
                                          step=total * epoch + step * self.train_batch_size)
+                
                 if eval_metrics["f1score"] >= best_val and global_step != 1:
                     best_val = eval_metrics["f1score"]
                     self.eval_on = "test"
@@ -568,7 +571,7 @@ class Trainer:
                     torch.cuda.empty_cache()
 
             metrics = self.reporter(y_true, y_pred, digits=4)
-
+            print(metrics)
             if intermediate:
                 keys = ["accuracy", "precision", "recall", "f05score", "f1score"]
                 self.print_metrics(epoch, step, {k: metrics[k] * 100 for k in keys}, train=False)
@@ -580,20 +583,21 @@ class Trainer:
                                                                          (0 < i < len(metrics["report"].split("\n")) - 3) and (len(t) > 0)])
                     }, step=step)
 
-                y_true_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_true]
-                y_true_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_true]
-                y_pred_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_pred]
-                y_pred_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_pred]
+                if MISC_LOC:
+                    y_true_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_true]
+                    y_true_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_true]
+                    y_pred_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_pred]
+                    y_pred_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_pred]
 
-                metrics_loc = self.reporter(y_true_loc, y_pred_loc, skipreport=True)
-                metrics_misc = self.reporter(y_true_misc, y_pred_misc, skipreport=True)
+                    metrics_loc = self.reporter(y_true_loc, y_pred_loc, skipreport=True)
+                    metrics_misc = self.reporter(y_true_misc, y_pred_misc, skipreport=True)
 
-                self.wandber.log_validation_step(
-                    {"locmetricstrain_" + k: v for k, v in metrics_loc.items() if k != "report"},
-                    step=step)
-                self.wandber.log_validation_step(
-                    {"miscmetricstrain_" + k: v for k, v in metrics_misc.items() if k != "report"},
-                    step=step)
+                    self.wandber.log_validation_step(
+                        {"locmetricstrain_" + k: v for k, v in metrics_loc.items() if k != "report"},
+                        step=step)
+                    self.wandber.log_validation_step(
+                        {"miscmetricstrain_" + k: v for k, v in metrics_misc.items() if k != "report"},
+                        step=step)
             else:
                 report = metrics["report"]
                 logger.info("\n%s", report)
@@ -792,7 +796,7 @@ if __name__ == "__main__":
     hyperparameter_defaults = vars(args)
 
     if hyperparameter_defaults["wandb"]:
-        run = wandb.init(name="", config=hyperparameter_defaults, project="bert-memorisation-and-pitfalls-paper2", tags=[
+        run = wandb.init(name="", config=hyperparameter_defaults, project="noise-studies", tags=[
                     hyperparameter_defaults["model_name"].split("-")[0].upper(),
                     "PAPER3",
                     "LOWRESLOGALL3"

@@ -9,7 +9,7 @@ class Wandber:
 
     def init(self, run_name, parameters):
         if self.on:
-            wandb.init(project="<wandb-project-name>",
+            wandb.init(project="noise-studies",
                        name=run_name,
                        config=parameters)
 
