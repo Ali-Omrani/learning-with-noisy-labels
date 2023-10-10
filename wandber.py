@@ -19,12 +19,12 @@ class Wandber:
 
     def log_training_step(self, parameters_dict, step):
         if self.on:
-            parameters_dict = {f"training-{k}": v for k, v in parameters_dict.items()}
+            parameters_dict = {f"training/{k}": v for k, v in parameters_dict.items()}
             wandb.log(parameters_dict, step=step)
 
     def log_validation_step(self, parameters_dict, step):
         if self.on:
-            parameters_dict = {f"validation-{k}": v for k, v in parameters_dict.items()}
+            parameters_dict = {f"validation/{k}": v for k, v in parameters_dict.items()}
             wandb.log(parameters_dict, step=step)
 
     def log_summary_metrics(self, parameters_dict, name):
