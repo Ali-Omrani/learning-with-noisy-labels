@@ -7,7 +7,7 @@ from consts import get_data_dirs_cardinal, get_processors, get_memories, get_rep
 from consts import get_base_parameters_trainer, get_models, get_configs, get_tokenizers
 
 try:
-    from model_utils import convert_examples_to_features, convert_examples_to_features_nli, convert_examples_to_features_ir
+    from model_utils import convert_examples_to_features, convert_examples_to_features_nli, convert_examples_to_features_ir, convert_examples_to_features_classification
     from wandber import Wandber
 except ImportError:
     from .model_utils import convert_examples_to_features, convert_examples_to_features_nli, convert_examples_to_features_ir
@@ -15,7 +15,6 @@ except ImportError:
 
 import logging
 import random
-
 import numpy as np
 import torch
 from pytorch_transformers import (AdamW, WarmupLinearSchedule)
@@ -178,6 +177,7 @@ class Trainer:
         if self.architecture_name not in configs:
             raise ValueError("Config not found: %s" % (self.architecture_name))
 
+
         self.processor = processors[self.dataset_name]()
         self.reporter = reporters[self.task_name]
         self.model_class = models[self.architecture_name]
@@ -188,7 +188,7 @@ class Trainer:
             self.data_dir = data_dirs_cardinal[self.dataset_name]
 
         self.label_list = self.processor.get_labels()
-        if self.task_name == "ir" or self.task_name == "nli":
+        if self.task_name == "ir" or self.task_name == "nli" or  self.task_name == "classification" :
             self.label_map = {i: label for i, label in enumerate(self.label_list, 0)}
             num_labels = len(self.label_list)
         else:
@@ -349,15 +349,16 @@ class Trainer:
                     self.train_first_learning_event[correctly_classified_selector & current_batch_selector & (self.train_first_learning_event==-1).bool()] = epoch
 
                     y_true, y_pred = self.get_labels(logits.detach(), label_ids.detach())
-                    y_true_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_true]
-                    y_true_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_true]
-                    y_pred_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_pred]
-                    y_pred_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_pred]
+                    if MISC_LOC:
+                        y_true_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_true]
+                        y_true_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_true]
+                        y_pred_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_pred]
+                        y_pred_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_pred]
 
-                    y_true_loc_all.extend(y_true_loc)
-                    y_true_misc_all.extend(y_true_misc)
-                    y_pred_loc_all.extend(y_pred_loc)
-                    y_pred_misc_all.extend(y_pred_misc)
+                        y_true_loc_all.extend(y_true_loc)
+                        y_true_misc_all.extend(y_true_misc)
+                        y_pred_loc_all.extend(y_pred_loc)
+                        y_pred_misc_all.extend(y_pred_misc)
 
                     if self.wandber.on:
                         with torch.no_grad():
@@ -408,14 +409,14 @@ class Trainer:
                                             data=[t.split() for i, t in enumerate(metrics["report"].split("\n")) if
                                                   (0 < i < len(metrics["report"].split("\n")) - 3) and (len(t) > 0)])
                                 }, step=total * epoch + step * self.train_batch_size)
-
-                            y_true_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_true]
-                            y_true_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_true]
-                            print(sum([sum([1 if "MISC" in word else 0 for word in sentence]) for sentence in y_true]))
-                            y_pred_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_pred]
-                            y_pred_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_pred]
-
                             if MISC_LOC:
+                                y_true_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_true]
+                                y_true_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_true]
+                                print(sum([sum([1 if "MISC" in word else 0 for word in sentence]) for sentence in y_true]))
+                                y_pred_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_pred]
+                                y_pred_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_pred]
+
+                            
 
                                 metrics_loc = self.reporter(y_true_loc, y_pred_loc, skipreport=True)
                                 metrics_misc = self.reporter(y_true_misc, y_pred_misc, skipreport=True)
@@ -621,6 +622,11 @@ class Trainer:
             y_true = label_ids[:,0]
             y_pred = [[self.label_map[y.item()] for y in y_pred]]
             y_true = [[self.label_map[y.item()] for y in y_true]]
+        if self.task_name =="classification":
+            y_pred = torch.argmax(logits[:,0,:], dim=1)
+            y_true = label_ids[:,0]
+            y_pred = [[self.label_map[y.item()] for y in y_pred]]
+            y_true = [[self.label_map[y.item()] for y in y_true]]
         else:
             logits = torch.argmax(logits, dim=2)
 
@@ -662,9 +668,11 @@ class Trainer:
                 features = convert_examples_to_features_nli(examples, self.label_list, self.max_seq_length, self.tokenizer)
             elif self.task_name == "ir":
                 features = convert_examples_to_features_ir(examples, self.label_list)
+            elif self.task_name == "classification":
+                features = convert_examples_to_features_classification(examples, self.label_list, self.max_seq_length, self.tokenizer)
             else:
                 features = convert_examples_to_features(examples, self.label_list, self.max_seq_length, self.tokenizer)
-
+            
             # logger.info(f"***** Running {'training' if train else 'evaluation'} *****")
             # logger.info(f"  Num examples = {len(examples)}")
             # logger.info(f"  Batch size = {batch_size}")

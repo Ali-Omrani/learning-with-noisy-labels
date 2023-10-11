@@ -1,6 +1,9 @@
 from __future__ import absolute_import
 
 import os
+import IPython
+
+import pandas as pd
 from abc import ABC
 
 try:
@@ -29,6 +32,12 @@ class InputExample(object):
         self.label = label
         self.image = image
 
+class SeqClassificationInputExample(object):
+    def __init__(self, guid, text, label):
+        self.guid = guid
+        self.text = text
+        self.label = label
+        
 
 class DataProcessor(object):
     """Base class for data converters for sequence classification data sets."""
@@ -124,6 +133,52 @@ class GedProcessor(BaseProcessorNLP):
 
     def get_labels(self):
         return ["c", "i", "[CLS]", "[SEP]"]
+
+
+class BaseTextClassificationProcessor(BaseProcessorNLP):
+    def get_train_examples(self, data_dir, file_name="train.csv"):
+        """See base class."""
+        return self._create_examples(
+            self._read_csv(os.path.join(data_dir, file_name)), "train")
+
+    def get_dev_examples(self, data_dir, file_name="valid.csv"):
+        """See base class."""
+        return self._create_examples(
+            self._read_csv(os.path.join(data_dir, file_name)), "dev")
+
+    def get_test_examples(self, data_dir, file_name="test.csv"):
+        """See base class."""
+        return self._create_examples(
+            self._read_csv(os.path.join(data_dir, file_name)), "test")
+
+    def _create_examples(self, lines, set_type):
+        examples = []
+        for i, (text, label) in enumerate(lines):
+            guid = "%s-%s" % (set_type, i)
+            examples.append(SeqClassificationInputExample(guid=guid, text=text, label=label))
+        return examples
+
+    
+    def _read_csv(self, input_file): # must return a list of [(text, label), (text, label)]
+        return self.read_csv_file(input_file)
+
+
+
+
+#here
+class GHCTextClassificationProcessor(BaseTextClassificationProcessor):
+    
+    def read_csv_file(self, input_file):
+        df = pd.read_csv(input_file) # must return a list of [(text, label), (text, label)]
+        data = []
+        for i, row in df.iterrows():
+            data.append((row["text"], row["cv"]))
+        return data
+    
+
+    def get_labels(self):
+        return [0,1]
+
 
 
 class BaseNLIProcessor(BaseProcessorNLP):

@@ -1,4 +1,5 @@
 import torch
+import IPython
 
 from seqeval_modified import f1_score, accuracy_score, recall_score, precision_score, classification_report
 from sklearn.metrics import accuracy_score as sk_accuracy_score
@@ -83,6 +84,45 @@ def get_f05(precision, recall, positive=1):
         return 0.
     return (1 + 0.5 ** 2) * precision * recall / (0.5 ** 2 * precision + recall)
 
+
+def get_classification_metrics(y_true,y_pred, digits=4):
+    y_true = y_true[0]
+    y_pred = y_pred[0]
+
+    accuracy = sk_accuracy_score(y_true, y_pred)
+    precision = sk_precision_score(y_true, y_pred, average="micro")
+    recall = sk_recall_score(y_true, y_pred, average="micro")
+    f1_score = sk_fbeta_score(y_true, y_pred, beta=1., average="micro")
+    f05_score = sk_fbeta_score(y_true, y_pred, beta=.5, average="micro")
+
+    to_write = [
+        ["accuracy:", f"{accuracy:.{digits}f}"],
+        ["precision:", f"{precision:.{digits}f}"],
+        ["recall:", f"{recall:.{digits}f}"],
+        ["f05 score:", f"{f05_score:.{digits}f}"],
+        ["f1 score:", f"{f1_score:.{digits}f}"],
+    ]
+
+    col_width = max(len(word) for row in to_write for word in row) + 2  # padding
+
+    report = "\n".join(["".join(word.rjust(col_width) for word in row) for row in to_write])
+
+    return {
+        "report": report,
+        "precision": precision,
+        "f1score": f1_score,
+        "f05score": f05_score,
+        "recall": recall,
+        "accuracy": accuracy,
+        "TP": 0,
+        "FP": 0,
+        "FN": 0,
+        "TN": 0,
+        "other": 0
+    }
+
+    pass
+    #TODO
 
 def get_ner_metrics(y_true, y_pred, digits=4, average="micro", skipreport=False):
     precision = precision_score(y_true, y_pred, average=average)

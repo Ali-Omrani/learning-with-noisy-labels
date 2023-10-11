@@ -33,7 +33,7 @@ if __name__ == '__main__':
     pars["dataset_name"] = dataset_name
     pars["task_name"] = "ner"
     pars["model_name"] = model_name
-    pars["max_seq_length"] = 50
+    pars["max_seq_length"] = 128 #TODO needs to be fixed 
     pars["num_train_epochs"] = epochs
     pars["do_eval"] = False
     pars["noise_addition"] = noise

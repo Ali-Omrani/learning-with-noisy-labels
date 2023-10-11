@@ -4,14 +4,15 @@ from transformers import DebertaV2Config, DebertaTokenizer, BertTokenizer, Rober
     RobertaConfig
 
 from processors import ConllNerProcessor, GedProcessor, JNLNerProcessor, BC2NerProcessor, SimplifiedNerProcessor, \
-    BC4NerProcessor, MNLIProcessor, HANSProcessor, MNISTProcessor, CIFAR10Processor, CIFAR100Processor, WNUT17NerProcessor
-from metrics import get_ner_metrics, get_ged_metrics, get_ir_metrics, get_wnut_metrics, get_nli_metrics
+    BC4NerProcessor, MNLIProcessor, HANSProcessor, MNISTProcessor, CIFAR10Processor, CIFAR100Processor, WNUT17NerProcessor, GHCTextClassificationProcessor
+from metrics import get_ner_metrics, get_ged_metrics, get_ir_metrics, get_wnut_metrics, get_nli_metrics, get_classification_metrics
 
-from bert_models import BertTokenClassifier, RobertaTokenClassifier, DebertaTokenClassifier
+from bert_models import BertTokenClassifier, RobertaTokenClassifier, DebertaTokenClassifier, BERTSequenceClassifier
 
 
 def get_processors():
     return {
+            "ghc":                       GHCTextClassificationProcessor,
             "conll03":                   ConllNerProcessor,
             "conll03-25loc-1":           ConllNerProcessor,
             "conll03-25loc-2":           ConllNerProcessor,
@@ -195,6 +196,7 @@ def get_processors():
 
 def get_data_dirs_cardinal():
     return {
+            "ghc":                       "../../Data/noise_data/GHC",
             "conll03":                   "../../Data/noise_data/conll03_ner/ner/full",
             "conll03-25loc-1":           "../../Data/noise_data/conll03_ner/ner/25LOC_1",
             "conll03-25loc-2":           "../../Data/noise_data/conll03_ner/ner/25LOC_2",
@@ -378,6 +380,7 @@ def get_data_dirs_cardinal():
 
 def get_models():
     return {
+            "BERT-Classification": BERTSequenceClassifier,
             "BERT":          BertTokenClassifier,
             "BIOBERT":       BertTokenClassifier,
             "ROBERTA":       RobertaTokenClassifier,
@@ -392,7 +395,8 @@ def get_reporters():
             "ged": get_ged_metrics,
             "nli": get_nli_metrics,
             "ir":  get_ir_metrics,
-            "wnut": get_wnut_metrics
+            "wnut": get_wnut_metrics, 
+            "classification": get_classification_metrics
     }
 
 
@@ -406,6 +410,7 @@ def get_tokenizers():
     return {
             "DISTILBERT":    DistilBertTokenizer,
             "BERT":          BertTokenizer,
+            "BERT-Classification": BertTokenizer,
             "BIOBERT":       BertTokenizer,
             "ROBERTA":       RobertaTokenizer,
             "DEBERTA":       DebertaTokenizer,
@@ -417,6 +422,7 @@ def get_configs():
     return {
             "DISTILBERT":    DistilBertConfig,
             "BERT":          BertConfig,
+            "BERT-Classification": BertTokenizer,
             "BIOBERT":       BertConfig,
             "ROBERTA":       RobertaConfig,
             "DEBERTA":       DebertaV2Config,
