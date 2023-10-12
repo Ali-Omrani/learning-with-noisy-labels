@@ -277,7 +277,7 @@ def convert_examples_to_features_nli(examples, label_list, max_seq_length, token
         assert len(label_ids) == max_seq_length
         assert len(valid) == max_seq_length
         assert len(label_mask) == max_seq_length
-
+        
         features.append(
             InputFeatures(input_ids=input_ids,
                           input_mask=input_mask,

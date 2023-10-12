@@ -422,7 +422,7 @@ def get_configs():
     return {
             "DISTILBERT":    DistilBertConfig,
             "BERT":          BertConfig,
-            "BERT-Classification": BertTokenizer,
+            "BERT-Classification": BertConfig,
             "BIOBERT":       BertConfig,
             "ROBERTA":       RobertaConfig,
             "DEBERTA":       DebertaV2Config,

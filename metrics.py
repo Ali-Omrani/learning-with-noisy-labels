@@ -89,11 +89,16 @@ def get_classification_metrics(y_true,y_pred, digits=4):
     y_true = y_true[0]
     y_pred = y_pred[0]
 
+    TP = [y==y_hat and y==1 for y,y_hat in zip(y_true,y_pred)].count(True)
+    FP = [y!=y_hat and y_hat==1 for y,y_hat in zip(y_true,y_pred)].count(True)
+    FN = [y!=y_hat and y==1 for y,y_hat in zip(y_true,y_pred)].count(True)
+    TN = [y==y_hat and y==0 for y,y_hat in zip(y_true,y_pred)].count(True)
+    
     accuracy = sk_accuracy_score(y_true, y_pred)
-    precision = sk_precision_score(y_true, y_pred, average="micro")
-    recall = sk_recall_score(y_true, y_pred, average="micro")
-    f1_score = sk_fbeta_score(y_true, y_pred, beta=1., average="micro")
-    f05_score = sk_fbeta_score(y_true, y_pred, beta=.5, average="micro")
+    precision = sk_precision_score(y_true, y_pred)
+    recall = sk_recall_score(y_true, y_pred)
+    f1_score = sk_fbeta_score(y_true, y_pred, beta=1.)
+    f05_score = sk_fbeta_score(y_true, y_pred, beta=.5)
 
     to_write = [
         ["accuracy:", f"{accuracy:.{digits}f}"],
@@ -101,6 +106,10 @@ def get_classification_metrics(y_true,y_pred, digits=4):
         ["recall:", f"{recall:.{digits}f}"],
         ["f05 score:", f"{f05_score:.{digits}f}"],
         ["f1 score:", f"{f1_score:.{digits}f}"],
+        ["TP:", f"{TP}"],
+        ["FP:", f"{FP}"],
+        ["FN:", f"{FN}"],
+        ["TN:", f"{TN}"]
     ]
 
     col_width = max(len(word) for row in to_write for word in row) + 2  # padding
@@ -108,16 +117,16 @@ def get_classification_metrics(y_true,y_pred, digits=4):
     report = "\n".join(["".join(word.rjust(col_width) for word in row) for row in to_write])
 
     return {
-        "report": report,
+        "report": None, #todo fix
         "precision": precision,
         "f1score": f1_score,
         "f05score": f05_score,
         "recall": recall,
         "accuracy": accuracy,
-        "TP": 0,
-        "FP": 0,
-        "FN": 0,
-        "TN": 0,
+        "TP": TP,
+        "FP": FP,
+        "FN": FN,
+        "TN": TN,
         "other": 0
     }
 

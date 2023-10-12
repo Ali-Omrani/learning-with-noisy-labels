@@ -104,6 +104,7 @@ class Trainer:
         self.n_gpu = n_gpu
         self.noise_addition = noise_addition
         self.architecture_name = self.model_name.split("-")[0].split("/")[-1].upper()
+        self.architecture_name += "-Classification" if self.task_name == "classification" else ""
         self.wandber = Wandber(wandb)
 
         self.eval_dataloader = None
@@ -202,7 +203,7 @@ class Trainer:
         self.eval_examples = None
         self.test_examples = None
         self.num_train_optimization_steps = 0
-        if self.do_train:
+        if self.do_train and self.task_name != "classification":
             self.train_examples = self.processor.get_train_examples(self.data_dir)
             self.train_forgetting_events = torch.zeros(len(self.train_examples) * self.max_seq_length, dtype=torch.long)
             self.train_learning_events = torch.zeros(len(self.train_examples) * self.max_seq_length, dtype=torch.long)
@@ -214,6 +215,25 @@ class Trainer:
                 len(self.train_examples) / self.train_batch_size / self.gradient_accumulation_steps) * self.num_train_epochs
             if self.local_rank != -1:
                 self.num_train_optimization_steps = self.num_train_optimization_steps // torch.distributed.get_world_size()
+        elif self.do_train and self.task_name == "classification":
+            self.train_examples = self.processor.get_train_examples(self.data_dir)
+            num_sequences = len(self.train_examples)  # The number of training sequences
+
+            # Initialize tracking variables at the sequence level
+            self.train_forgetting_events = torch.zeros(num_sequences, dtype=torch.long)
+            self.train_learning_events = torch.zeros(num_sequences, dtype=torch.long)
+            self.train_first_learning_event = torch.zeros(num_sequences, dtype=torch.long) - 1
+            self.train_first_learning_event_misc = torch.zeros(num_sequences, dtype=torch.long) - 1
+            self.train_first_learning_event_loc = torch.zeros(num_sequences, dtype=torch.long) - 1
+            self.train_previous_labels = torch.zeros(num_sequences, dtype=torch.bool)
+
+            # Calculate the total number of optimization steps
+            self.num_train_optimization_steps = int(
+                num_sequences / self.train_batch_size / self.gradient_accumulation_steps) * self.num_train_epochs
+
+            if self.local_rank != -1:
+                self.num_train_optimization_steps = self.num_train_optimization_steps // torch.distributed.get_world_size()
+
 
         if self.do_eval:
             self.eval_examples = self.processor.get_dev_examples(self.data_dir)
@@ -256,7 +276,8 @@ class Trainer:
 
     def setup_optimizer_and_scheduler(self):
         param_optimizer = []
-
+        if "-Classification" in self.architecture_name:
+            self.architecture_name = self.architecture_name.replace("-Classification", "")
         param_optimizer += getattr(self.model, self.architecture_name.lower()).named_parameters()
         param_optimizer += list(self.model.classifier.named_parameters())
 
@@ -327,24 +348,43 @@ class Trainer:
                     nb_tr_steps += 1
 
                     self.model.verify_noise_detection(noise_mask, step=total * epoch + step * self.train_batch_size)
+                    if self.task_name != "classification":
+                        train_new_labels = (logits.argmax(2).squeeze() == label_ids).view(-1).cpu()
+                        selected_idxs = selected_idxs.view(-1)
+                        current_batch_selector = torch.zeros_like(self.train_learning_events)
+                        current_batch_selector[selected_idxs] = 1
+                        current_batch_selector = current_batch_selector.bool()
+                        correctly_classified_selector = torch.zeros_like(current_batch_selector).bool()
+                        correctly_classified_selector[selected_idxs] = train_new_labels
+                        incorrectly_classified_selector = torch.zeros_like(current_batch_selector).bool()
+                        incorrectly_classified_selector[selected_idxs] = ~train_new_labels
+                        self.train_forgetting_events[current_batch_selector & self.train_previous_labels & incorrectly_classified_selector] += 1
+                        self.train_learning_events[current_batch_selector & (~self.train_previous_labels) & correctly_classified_selector] += 1
+                        self.train_previous_labels[selected_idxs] = train_new_labels
+                        label_ids_selector = torch.zeros_like(current_batch_selector).long()
+                        label_ids_selector[selected_idxs] = label_ids.view(-1).cpu()
+                    else:
+                        train_new_labels = logits.argmax(1)  # Adjust based on your model
+                        train_new_labels = (train_new_labels == label_ids[:, 0]).cpu()
+                        current_batch_selector = torch.zeros_like(self.train_learning_events)
+                        current_batch_selector[selected_idxs] = 1
+                        current_batch_selector = current_batch_selector.bool()
+                        # Compare the predicted sequence-level labels with true labels
+                        correctly_classified_selector = torch.zeros_like(current_batch_selector).bool()
+                        correctly_classified_selector[selected_idxs] = train_new_labels
+                        incorrectly_classified_selector = torch.zeros_like(current_batch_selector).bool()
+                        incorrectly_classified_selector[selected_idxs] = ~train_new_labels
+                        self.train_forgetting_events[current_batch_selector & self.train_previous_labels & incorrectly_classified_selector] += 1
+                        self.train_learning_events[current_batch_selector & (~self.train_previous_labels) & correctly_classified_selector] += 1
+                        self.train_previous_labels[selected_idxs] = train_new_labels
+                   
 
-                    train_new_labels = (logits.argmax(2).squeeze() == label_ids).view(-1).cpu()
-                    selected_idxs = selected_idxs.view(-1)
-                    current_batch_selector = torch.zeros_like(self.train_learning_events)
-                    current_batch_selector[selected_idxs] = 1
-                    current_batch_selector = current_batch_selector.bool()
-                    correctly_classified_selector = torch.zeros_like(current_batch_selector).bool()
-                    correctly_classified_selector[selected_idxs] = train_new_labels
-                    incorrectly_classified_selector = torch.zeros_like(current_batch_selector).bool()
-                    incorrectly_classified_selector[selected_idxs] = ~train_new_labels
-                    self.train_forgetting_events[current_batch_selector & self.train_previous_labels & incorrectly_classified_selector] += 1
-                    self.train_learning_events[current_batch_selector & (~self.train_previous_labels) & correctly_classified_selector] += 1
-                    self.train_previous_labels[selected_idxs] = train_new_labels
+                        # label_ids_selector = torch.zeros_like(current_batch_selector).long()
+                        # label_ids_selector[selected_idxs] = label_ids.view(-1).cpu()
 
-                    label_ids_selector = torch.zeros_like(current_batch_selector).long()
-                    label_ids_selector[selected_idxs] = label_ids.view(-1).cpu()
-                    self.train_first_learning_event_misc[correctly_classified_selector & current_batch_selector & (self.train_first_learning_event_misc==-1).bool() & ((label_ids_selector == 2) | (label_ids_selector == 3)) ] = epoch
-                    self.train_first_learning_event_loc[correctly_classified_selector & current_batch_selector & (self.train_first_learning_event_loc==-1).bool() & ((label_ids_selector == 8) | (label_ids_selector == 9)) ] = epoch
+                    if MISC_LOC:
+                        self.train_first_learning_event_misc[correctly_classified_selector & current_batch_selector & (self.train_first_learning_event_misc==-1).bool() & ((label_ids_selector == 2) | (label_ids_selector == 3)) ] = epoch
+                        self.train_first_learning_event_loc[correctly_classified_selector & current_batch_selector & (self.train_first_learning_event_loc==-1).bool() & ((label_ids_selector == 8) | (label_ids_selector == 9)) ] = epoch
 
                     self.train_first_learning_event[correctly_classified_selector & current_batch_selector & (self.train_first_learning_event==-1).bool()] = epoch
 
@@ -364,35 +404,44 @@ class Trainer:
                         with torch.no_grad():
                             lm = {v:k for k,v in self.label_map.items()}
                             entropy = lambda x: -(x * x.log()).sum().item()
-                            correct_logits = logits.max(2).values[(logits.argmax(2) == label_ids) & (label_ids != lm.get("[PAD]")) & (label_ids != lm.get("[SEP]")) & (label_ids != lm.get("[CLS]"))]
-                            incorrect_logits = logits.max(2).values[(logits.argmax(2) != label_ids) & (label_ids != lm.get("[PAD]")) & (label_ids != lm.get("[SEP]")) & (label_ids != lm.get("[CLS]"))]
-                            valid_logits = logits.max(2).values[(label_ids != lm.get("[PAD]")) & (label_ids != lm.get("[SEP]")) & (label_ids != lm.get("[CLS]"))]
+                                
+                            if self.task_name != "classification":
+                                correct_logits = logits.max(2).values[(logits.argmax(2) == label_ids) & (label_ids != lm.get("[PAD]")) & (label_ids != lm.get("[SEP]")) & (label_ids != lm.get("[CLS]"))]
+                                incorrect_logits = logits.max(2).values[(logits.argmax(2) != label_ids) & (label_ids != lm.get("[PAD]")) & (label_ids != lm.get("[SEP]")) & (label_ids != lm.get("[CLS]"))]
+                                valid_logits = logits.max(2).values[(label_ids != lm.get("[PAD]")) & (label_ids != lm.get("[SEP]")) & (label_ids != lm.get("[CLS]"))]
+                                summed_weights = 0
+                                summed_gradients = 0
+                                for param in list(getattr(self.model, self.architecture_name.lower()).parameters()) + list(self.model.classifier.parameters()):
+                                    summed_weights += torch.norm(param).item()
+                                    if param.grad is not None:
+                                        summed_gradients += torch.norm(param.grad).item()
 
-                            summed_weights = 0
-                            summed_gradients = 0
-                            for param in list(getattr(self.model, self.architecture_name.lower()).parameters()) + list(self.model.classifier.parameters()):
-                                summed_weights += torch.norm(param).item()
-                                if param.grad is not None:
-                                    summed_gradients += torch.norm(param.grad).item()
+                                wandb.log({
+                                            "entropy/entropy-correct": entropy(correct_logits),
+                                            "entropy/entropy-incorrect": entropy(incorrect_logits),
+                                            "entropy/entropy-predicted": entropy(valid_logits),
+                                            "entropy/logits-correct": correct_logits.mean(),
+                                            "entropy/logits-incorrect": incorrect_logits.mean(),
+                                            "entropy/logits-predicted": valid_logits.mean(),
+                                            "entropy/summed-weight": summed_weights,
+                                            "entropy/summed-gradients": summed_gradients
+                                        },
+                                        step=total * epoch + step * self.train_batch_size)
 
-                            wandb.log({
-                                        "entropy/entropy-correct": entropy(correct_logits),
-                                        "entropy/entropy-incorrect": entropy(incorrect_logits),
-                                        "entropy/entropy-predicted": entropy(valid_logits),
-                                        "entropy/logits-correct": correct_logits.mean(),
-                                        "entropy/logits-incorrect": incorrect_logits.mean(),
-                                        "entropy/logits-predicted": valid_logits.mean(),
-                                        "entropy/summed-weight": summed_weights,
-                                        "entropy/summed-gradients": summed_gradients
-                                       },
-                                      step=total * epoch + step * self.train_batch_size)
+                            elif self.task_name == "classification":
+                                #todo: fix this                                
+                                correct_logits = (logits.argmax(1) == label_ids[:, 0]).cpu()
+                                incorrect_logits = (logits.argmax(1) != label_ids[:, 0]).cpu()
+                                valid_logits = torch.ones_like(correct_logits).bool()
+                               
+                           
 
                     if (step + 1) % self.gradient_accumulation_steps == 0:
                         self.optimizer.step()
                         self.scheduler.step()  # Update learning rate schedule
                         self.model.zero_grad()
                         global_step += 1
-
+                    
                     if ((global_step + 1) % self.print_every == 0 or global_step == 1) and self.do_eval:
                         with torch.no_grad():
                             y_true, y_pred = self.get_labels(logits.detach(), label_ids.detach())
@@ -623,7 +672,7 @@ class Trainer:
             y_pred = [[self.label_map[y.item()] for y in y_pred]]
             y_true = [[self.label_map[y.item()] for y in y_true]]
         if self.task_name =="classification":
-            y_pred = torch.argmax(logits[:,0,:], dim=1)
+            y_pred = torch.argmax(logits, dim=1)
             y_true = label_ids[:,0]
             y_pred = [[self.label_map[y.item()] for y in y_pred]]
             y_true = [[self.label_map[y.item()] for y in y_true]]
@@ -703,7 +752,7 @@ class Trainer:
 
                 torch.save(noise_selector.long().view(-1), f'noise_mask_{self.model_name}_{self.dataset_name}_{self.noise_addition}.pt')
 
-            if self.task_name == "ir":
+            if self.task_name == "ir" or self.task_name == "classification":
                 idxs = torch.tensor([int(i) for i in range(all_input_ids.shape[0])])
             else:
                 idxs = torch.tensor([int(i) for i in range(all_input_ids.view(-1).shape[0])]).view_as(all_input_ids)

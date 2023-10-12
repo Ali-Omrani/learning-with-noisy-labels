@@ -172,7 +172,7 @@ class GHCTextClassificationProcessor(BaseTextClassificationProcessor):
         df = pd.read_csv(input_file) # must return a list of [(text, label), (text, label)]
         data = []
         for i, row in df.iterrows():
-            data.append((row["text"], row["cv"]))
+            data.append((row["text"], row["vo"]))
         return data
     
 
