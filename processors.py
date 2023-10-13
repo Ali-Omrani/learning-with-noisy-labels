@@ -179,6 +179,23 @@ class GHCTextClassificationProcessor(BaseTextClassificationProcessor):
     def get_labels(self):
         return [0,1]
 
+class IMDBTextClassificationProcessor(BaseTextClassificationProcessor):
+    
+    def read_csv_file(self, input_file):
+        DEV_MODE = True
+        df = pd.read_csv(input_file) # must return a list of [(text, label), (text, label)]
+        data = []
+        for i, row in df.iterrows():
+            data.append((row["review"], row["sentiment"]))
+        if DEV_MODE:
+            data = data[:5000]
+        return data
+    
+
+    def get_labels(self):
+        return ["negative","positive"]
+
+
 
 
 class BaseNLIProcessor(BaseProcessorNLP):

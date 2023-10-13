@@ -4,7 +4,8 @@ from transformers import DebertaV2Config, DebertaTokenizer, BertTokenizer, Rober
     RobertaConfig
 
 from processors import ConllNerProcessor, GedProcessor, JNLNerProcessor, BC2NerProcessor, SimplifiedNerProcessor, \
-    BC4NerProcessor, MNLIProcessor, HANSProcessor, MNISTProcessor, CIFAR10Processor, CIFAR100Processor, WNUT17NerProcessor, GHCTextClassificationProcessor
+    BC4NerProcessor, MNLIProcessor, HANSProcessor, MNISTProcessor, CIFAR10Processor, CIFAR100Processor, WNUT17NerProcessor, \
+    GHCTextClassificationProcessor, IMDBTextClassificationProcessor
 from metrics import get_ner_metrics, get_ged_metrics, get_ir_metrics, get_wnut_metrics, get_nli_metrics, get_classification_metrics
 
 from bert_models import BertTokenClassifier, RobertaTokenClassifier, DebertaTokenClassifier, BERTSequenceClassifier
@@ -12,6 +13,7 @@ from bert_models import BertTokenClassifier, RobertaTokenClassifier, DebertaToke
 
 def get_processors():
     return {
+            "imdb":                      IMDBTextClassificationProcessor,
             "ghc":                       GHCTextClassificationProcessor,
             "conll03":                   ConllNerProcessor,
             "conll03-25loc-1":           ConllNerProcessor,
@@ -196,6 +198,7 @@ def get_processors():
 
 def get_data_dirs_cardinal():
     return {
+            "imdb":                      "../../Data/noise_data/IMDB",
             "ghc":                       "../../Data/noise_data/GHC",
             "conll03":                   "../../Data/noise_data/conll03_ner/ner/full",
             "conll03-25loc-1":           "../../Data/noise_data/conll03_ner/ner/25LOC_1",

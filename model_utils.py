@@ -2,6 +2,7 @@ import logging
 import re
 import json
 from tqdm import tqdm
+import torch
 from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 from torchvision import transforms
 from torch.utils.data import Subset
@@ -288,7 +289,45 @@ def convert_examples_to_features_nli(examples, label_list, max_seq_length, token
     return features
 
 
-def convert_examples_to_features_classification(examples, label_list, max_seq_length, tokenizer):
+
+def convert_examples_to_features_classification(examples, label_list, max_seq_length, tokenizer, batch_size=128):
+    label_map = {label: i for i, label in enumerate(label_list, 0)}
+
+    features = []
+    current_batch_text = []
+
+    for (ex_index, example) in tqdm(enumerate(examples), total=len(examples)):
+        text = example.text
+        current_batch_text.append(text)
+
+        if len(current_batch_text) == batch_size or ex_index == len(examples) - 1:
+            # Tokenize the current batch of text
+            batch_tokens = tokenizer(current_batch_text, truncation=True, padding='max_length', max_length=max_seq_length, return_tensors='pt')
+
+            input_ids = batch_tokens['input_ids']
+            input_mask = batch_tokens['attention_mask']
+            
+            label_ids = [label_map[example.label] for _ in range(len(input_ids))]
+            segment_ids = torch.zeros(input_ids.shape, dtype=torch.long)  # Assuming single-segment classification
+
+            valid_ids = torch.zeros(input_ids.shape, dtype=torch.long)
+            valid_ids[:, 0] = 1  # Set the first token to 1
+            label_mask = valid_ids.clone()
+            for i in range(len(input_ids)):
+                features.append(
+                    InputFeatures(input_ids=input_ids[i],
+                                  input_mask=list(input_mask[i]),
+                                  segment_ids=list(segment_ids[i]),
+                                  label_id=label_ids[i],
+                                  valid_ids=list(valid_ids[i]),
+                                  label_mask=list(label_mask[i])))
+            
+            current_batch_text = []  # Clear the current batch
+
+    return features
+
+def convert_examples_to_features_classification_slow(examples, label_list, max_seq_length, tokenizer):
+
     label_map = {label: i for i, label in enumerate(label_list, 0)}
 
     features = []

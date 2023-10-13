@@ -73,14 +73,6 @@ class BERTSequenceClassifier(BertPreTrainedModel):
         cls_output = bert_output[0][:, 0, :]  # [CLS] token embedding
         
 
-
-        # try:
-        #     n = kwargs["nth_layer"]
-        # except KeyError:
-        #     n = 12
-        # nth_layer_output = bert_output[-1][n]
-        # if n != 12: print(f"{n}{'st' if n == 1 else 'nd' if n == 2 else 'rd' if n == 3 else 'th'} hidden layer used")
-
         if torch.isnan(cls_output).any():
             raise ValueError("NaNs in sequence output")
         
@@ -89,7 +81,7 @@ class BERTSequenceClassifier(BertPreTrainedModel):
         # Apply the classifier to the sequence_output
         logits = self.classifier(cls_output)
         if labels is not None:
-            labels = labels[:,0]
+            # labels = labels[:,0]
 
             loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(logits, labels)

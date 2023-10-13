@@ -7,7 +7,7 @@ from consts import get_data_dirs_cardinal, get_processors, get_memories, get_rep
 from consts import get_base_parameters_trainer, get_models, get_configs, get_tokenizers
 
 try:
-    from model_utils import convert_examples_to_features, convert_examples_to_features_nli, convert_examples_to_features_ir, convert_examples_to_features_classification
+    from model_utils import convert_examples_to_features, convert_examples_to_features_nli, convert_examples_to_features_ir, convert_examples_to_features_classification, convert_examples_to_features_classification_slow
     from wandber import Wandber
 except ImportError:
     from .model_utils import convert_examples_to_features, convert_examples_to_features_nli, convert_examples_to_features_ir
@@ -26,7 +26,16 @@ from tqdm import tqdm, trange
 
 MISC_LOC = False # flag not to log the LOC and MISC
 
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+import datetime
+
+# Create a timestamp using the current date and time
+current_datetime = datetime.datetime.now()
+timestamp = current_datetime.strftime('%Y-%m-%d_%H-%M-%S')
+
+# Create the log file with the timestamp in the filename
+log_filename = f'log_{timestamp}.log'
+logging.basicConfig(filename=log_filename,
+                    format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -67,7 +76,7 @@ class Trainer:
                  # Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True. 0 (default value): dynamic loss scaling. Positive power of 2: static loss scaling value.
                  server_ip="",
                  server_port="",
-                 print_every=50,
+                 print_every=10,
                  n_gpu=None,
                  noise_addition=0.0
                  ):
@@ -347,7 +356,8 @@ class Trainer:
                     # nb_tr_examples += input_ids.size(0)
                     nb_tr_steps += 1
 
-                    self.model.verify_noise_detection(noise_mask, step=total * epoch + step * self.train_batch_size)
+                    # todo:
+                    # self.model.verify_noise_detection(noise_mask, step=total * epoch + step * self.train_batch_size)
                     if self.task_name != "classification":
                         train_new_labels = (logits.argmax(2).squeeze() == label_ids).view(-1).cpu()
                         selected_idxs = selected_idxs.view(-1)
@@ -365,7 +375,7 @@ class Trainer:
                         label_ids_selector[selected_idxs] = label_ids.view(-1).cpu()
                     else:
                         train_new_labels = logits.argmax(1)  # Adjust based on your model
-                        train_new_labels = (train_new_labels == label_ids[:, 0]).cpu()
+                        train_new_labels = (train_new_labels == label_ids).cpu()
                         current_batch_selector = torch.zeros_like(self.train_learning_events)
                         current_batch_selector[selected_idxs] = 1
                         current_batch_selector = current_batch_selector.bool()
@@ -389,6 +399,7 @@ class Trainer:
                     self.train_first_learning_event[correctly_classified_selector & current_batch_selector & (self.train_first_learning_event==-1).bool()] = epoch
 
                     y_true, y_pred = self.get_labels(logits.detach(), label_ids.detach())
+                    
                     if MISC_LOC:
                         y_true_loc = [[word if "LOC" in word else "O" for word in sentence] for sentence in y_true]
                         y_true_misc = [[word if "MISC" in word else "O" for word in sentence] for sentence in y_true]
@@ -430,8 +441,8 @@ class Trainer:
 
                             elif self.task_name == "classification":
                                 #todo: fix this                                
-                                correct_logits = (logits.argmax(1) == label_ids[:, 0]).cpu()
-                                incorrect_logits = (logits.argmax(1) != label_ids[:, 0]).cpu()
+                                correct_logits = (logits.argmax(1) == label_ids).cpu()
+                                incorrect_logits = (logits.argmax(1) != label_ids).cpu()
                                 valid_logits = torch.ones_like(correct_logits).bool()
                                
                            
@@ -442,14 +453,16 @@ class Trainer:
                         self.model.zero_grad()
                         global_step += 1
                     
-                    if ((global_step + 1) % self.print_every == 0 or global_step == 1) and self.do_eval:
+                    if ((global_step + 1) % self.print_every == 0 or global_step == 1):
                         with torch.no_grad():
                             y_true, y_pred = self.get_labels(logits.detach(), label_ids.detach())
                             metrics = self.reporter(y_true, y_pred)
-                            keys = ["accuracy", "precision", "recall", "f05score", "f1score"]
-                            self.print_metrics(epoch, step, {k: metrics[k] * 100 for k in keys}, train=True)
 
                             metrics["loss"] = loss.item()
+                            metrics["avg_loss"] = tr_loss/nb_tr_steps
+                            keys = ["avg_loss", "loss", "f1score", "precision", "recall"]
+                            self.print_metrics(epoch, step, {k: metrics[k] * 100 for k in keys}, train=True)
+
                             self.wandber.log_training_step({k: v for k, v in metrics.items() if k != "report"}, step=total * epoch + step * self.train_batch_size)
                             if self.wandber.on and metrics["report"] is not None:
                                 wandb.log({
@@ -621,7 +634,6 @@ class Trainer:
                     torch.cuda.empty_cache()
 
             metrics = self.reporter(y_true, y_pred, digits=4)
-            print(metrics)
             if intermediate:
                 keys = ["accuracy", "precision", "recall", "f05score", "f1score"]
                 self.print_metrics(epoch, step, {k: metrics[k] * 100 for k in keys}, train=False)
@@ -673,9 +685,9 @@ class Trainer:
             y_true = [[self.label_map[y.item()] for y in y_true]]
         if self.task_name =="classification":
             y_pred = torch.argmax(logits, dim=1)
-            y_true = label_ids[:,0]
-            y_pred = [[self.label_map[y.item()] for y in y_pred]]
-            y_true = [[self.label_map[y.item()] for y in y_true]]
+            y_true = label_ids
+            y_pred = [[y.item() for y in y_pred]]
+            y_true = [[y.item() for y in y_true]]
         else:
             logits = torch.argmax(logits, dim=2)
 
@@ -726,7 +738,7 @@ class Trainer:
             # logger.info(f"  Num examples = {len(examples)}")
             # logger.info(f"  Batch size = {batch_size}")
             # if train: logger.info("  Num steps = %d", self.num_train_optimization_steps)
-            if self.task_name == "ir":
+            if self.task_name == "ir" or self.task_name == "classification":
                 all_input_ids = torch.cat([f.input_ids.unsqueeze(0) for f in features], dim=0)
             else:
                 all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)

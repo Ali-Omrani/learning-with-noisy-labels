@@ -1,6 +1,6 @@
 import torch
 import IPython
-
+from itertools import chain
 from seqeval_modified import f1_score, accuracy_score, recall_score, precision_score, classification_report
 from sklearn.metrics import accuracy_score as sk_accuracy_score
 from sklearn.metrics import precision_score as sk_precision_score
@@ -86,9 +86,10 @@ def get_f05(precision, recall, positive=1):
 
 
 def get_classification_metrics(y_true,y_pred, digits=4):
-    y_true = y_true[0]
-    y_pred = y_pred[0]
+    y_true = list(chain(*y_true))
+    y_pred = list(chain(*y_pred))
 
+    
     TP = [y==y_hat and y==1 for y,y_hat in zip(y_true,y_pred)].count(True)
     FP = [y!=y_hat and y_hat==1 for y,y_hat in zip(y_true,y_pred)].count(True)
     FN = [y!=y_hat and y==1 for y,y_hat in zip(y_true,y_pred)].count(True)
