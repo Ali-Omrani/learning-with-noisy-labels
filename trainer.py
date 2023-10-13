@@ -78,7 +78,8 @@ class Trainer:
                  server_port="",
                  print_every=10,
                  n_gpu=None,
-                 noise_addition=0.0
+                 noise_addition=0.0,
+                 classifier_dropout=0.3,
                  ):
 
         self.data_dir = data_dir
@@ -115,6 +116,7 @@ class Trainer:
         self.architecture_name = self.model_name.split("-")[0].split("/")[-1].upper()
         self.architecture_name += "-Classification" if self.task_name == "classification" else ""
         self.wandber = Wandber(wandb)
+        self.classifier_dropout = classifier_dropout
 
         self.eval_dataloader = None
         self.test_dataloader = None
@@ -254,7 +256,7 @@ class Trainer:
         # Prepare model
         config = self.config_class.from_pretrained(self.model_name, num_labels=num_labels, finetuning_task=self.task_name, output_hidden_states=True)
         config.wandb = wandb
-
+        config.classifier_dropout = self.classifier_dropout
         # self.model = self.model_class(config=config)
         self.model = self.model_class.from_pretrained(self.model_name, from_tf=False, config=config)
 
@@ -848,6 +850,27 @@ class Trainer:
         logger.info(to_log)
 
 
+def sweep_train(config=None):
+    
+    wandb.init(name="", config=config, project="noise-studies")
+    config = wandb.config
+    config = dict(config)
+    print(config)
+
+    if "paper" in config:
+        config.pop("paper")
+
+
+    
+    
+    t = Trainer(**config)
+    t.train()
+
+    t.eval_on = "test"
+    t.eval(load_model=False, intermediate=False)
+
+
+    
 if __name__ == "__main__":
     import argparse
 
@@ -864,46 +887,86 @@ if __name__ == "__main__":
 
     hyperparameter_defaults = vars(args)
 
-    if hyperparameter_defaults["wandb"]:
-        run = wandb.init(name="", config=hyperparameter_defaults, project="noise-studies", tags=[
-                    hyperparameter_defaults["model_name"].split("-")[0].upper(),
-                    "PAPER3",
-                    "LOWRESLOGALL3"
-                ])
+    sweep_hyperparameter_defaults = {k: {"value":hyperparameter_defaults[k]} for k in hyperparameter_defaults}
 
-        config = wandb.config
-        wandb.save("*.py")
-        wandb.save("./utils_/*.py", base_path="..")
-        print("using wandb")
-    else:
-        config = hyperparameter_defaults
-        print("not using wandb")
+    
+    # ---------------- sweep -----------------
+    sweep_config = {
+    'method': 'random'
+    }
 
-    config = dict(config)
-    if "paper" in config:
-        config.pop("paper")
+    metric = {
+    'name': 'validation/f1score',
+    'goal': 'maximize'   
+    }
 
-    t = Trainer(**config)
-    t.train()
+    sweep_config['metric'] = metric
 
-    # t.train(oneshot_split=-2)
+    parameters_dict = sweep_hyperparameter_defaults
+    
+    parameters_dict.update({
+    
+    'learning_rate': {
+        'values': [0.00001,0.0001, 0.001]
+        },
+        'classifier_dropout': {
+          'values': [0.3, 0.4, 0.5]
+        },
+        'num_train_epochs': {
+            'values': [5, 10, 15, 20]
+        },
 
-    # t.train(oneshot_split=1)
-    # t.num_train_epochs = 1.0
-    # t.num_train_optimization_steps = int(
-    #     len(t.train_examples) / t.train_batch_size / t.gradient_accumulation_steps) * t.num_train_epochs
-    # t.setup_optimizer_and_scheduler()
-    # t.train_dataloader = t.get_dataloader(force_recompute=True, oneshot_split=2)
-    # t.train(oneshot_split=2, start_epoch=4)
+    })
 
-    t.eval_on = "test"
-    t.eval(load_model=False, intermediate=False)
+    print(sweep_config)
 
+    sweep_config['parameters'] = parameters_dict
+    sweep_id = wandb.sweep(sweep_config, project="noise-studies")
+
+    wandb.agent(sweep_id, sweep_train, count=5)
+
+
+    sweep_config['parameters'] = parameters_dict
+    
+    wandb.agent(sweep_id, sweep_train, count=5)
+
+
+
+
+
+# ------------------------
+
+    # if hyperparameter_defaults["wandb"]:
+    #     run = wandb.init(name="", config=hyperparameter_defaults, project="noise-studies", tags=[
+    #                 hyperparameter_defaults["model_name"].split("-")[0].upper(),
+    #                 "PAPER3",
+    #                 "LOWRESLOGALL3"
+    #             ])
+
+    #     config = wandb.config
+    #     wandb.save("*.py")
+    #     wandb.save("./utils_/*.py", base_path="..")
+    #     print("using wandb")
+    # else:
+    #     config = hyperparameter_defaults
+    #     print("not using wandb")
+
+    # config = dict(config)
+    # if "paper" in config:
+    #     config.pop("paper")
+
+
+    
+    
+    # t = Trainer(**config)
+    # t.train()
+
+   
 
     # t.eval_on = "test"
     # t.eval(load_model=False, intermediate=False)
-    # t.add_noise_and_detect()
-    # t.eval_knn()
 
+
+   
     # ------------
 

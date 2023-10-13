@@ -12,6 +12,7 @@ class BERTSequenceClassifier(BertPreTrainedModel):
 
     
     def __init__(self, config):
+        print("instantiating BERTSequenceClassifier!!!!")
         super(BertPreTrainedModel, self).__init__(config)
         self.num_labels = config.num_labels
         self.wandb = config.wandb
@@ -19,7 +20,7 @@ class BERTSequenceClassifier(BertPreTrainedModel):
         self.bert = BertModel(config, add_pooling_layer=False)
 
         self.classifier = nn.Sequential(
-            nn.Dropout(config.hidden_dropout_prob),
+            nn.Dropout(config.classifier_dropout),
             nn.Linear(config.hidden_size, config.num_labels)
         )
 

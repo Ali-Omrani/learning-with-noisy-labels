@@ -169,10 +169,13 @@ class BaseTextClassificationProcessor(BaseProcessorNLP):
 class GHCTextClassificationProcessor(BaseTextClassificationProcessor):
     
     def read_csv_file(self, input_file):
+        DEV_MODE = False
         df = pd.read_csv(input_file) # must return a list of [(text, label), (text, label)]
         data = []
         for i, row in df.iterrows():
             data.append((row["text"], row["vo"]))
+        if DEV_MODE:
+            data = data[:1000]
         return data
     
 
@@ -188,7 +191,7 @@ class IMDBTextClassificationProcessor(BaseTextClassificationProcessor):
         for i, row in df.iterrows():
             data.append((row["review"], row["sentiment"]))
         if DEV_MODE:
-            data = data[:5000]
+            data = data[:1000]
         return data
     
 

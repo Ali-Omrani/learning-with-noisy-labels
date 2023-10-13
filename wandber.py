@@ -8,6 +8,7 @@ class Wandber:
         self.on = on
 
     def init(self, run_name, parameters):
+        print("calling this init inside the wandber class")
         if self.on:
             wandb.init(project="noise-studies",
                        name=run_name,
