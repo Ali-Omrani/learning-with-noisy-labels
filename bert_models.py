@@ -16,7 +16,6 @@ class BERTSequenceClassifier(BertPreTrainedModel):
         super(BertPreTrainedModel, self).__init__(config)
         self.num_labels = config.num_labels
         self.wandb = config.wandb
-
         self.bert = BertModel(config, add_pooling_layer=False)
 
         self.classifier = nn.Sequential(

@@ -923,12 +923,10 @@ if __name__ == "__main__":
     sweep_config['parameters'] = parameters_dict
     sweep_id = wandb.sweep(sweep_config, project="noise-studies")
 
-    wandb.agent(sweep_id, sweep_train, count=5)
+    wandb.agent(sweep_id, sweep_train, count=10)
 
 
-    sweep_config['parameters'] = parameters_dict
-    
-    wandb.agent(sweep_id, sweep_train, count=5)
+
 
 
 
