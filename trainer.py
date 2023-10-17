@@ -819,7 +819,7 @@ class Trainer:
             if self.sampling_ratio != None and train:
                 labels = [l.item() for l in all_label_ids]
                 weights = get_weights_classes(labels, self.sampling_ratio)
-                sampler = WeightedRandomSampler(weights=weights, replacement=True)
+                sampler = WeightedRandomSampler(weights=weights, num_samples=len(weights), replacement=True)
             elif self.local_rank == -1 and train:
                 sampler = RandomSampler(data)
             elif train:
