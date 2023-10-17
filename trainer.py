@@ -7,7 +7,7 @@ from consts import get_data_dirs_cardinal, get_processors, get_memories, get_rep
 from consts import get_base_parameters_trainer, get_models, get_configs, get_tokenizers
 
 try:
-    from model_utils import convert_examples_to_features, convert_examples_to_features_nli, convert_examples_to_features_ir, convert_examples_to_features_classification, convert_examples_to_features_classification_slow
+    from model_utils import convert_examples_to_features, convert_examples_to_features_nli, convert_examples_to_features_ir, convert_examples_to_features_classification, convert_examples_to_features_classification_slow, get_weights_classes
     from wandber import Wandber
 except ImportError:
     from .model_utils import convert_examples_to_features, convert_examples_to_features_nli, convert_examples_to_features_ir
@@ -19,7 +19,7 @@ import numpy as np
 import torch
 from pytorch_transformers import (AdamW, WarmupLinearSchedule)
 
-from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset)
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset, WeightedRandomSampler)
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 
@@ -80,8 +80,9 @@ class Trainer:
                  n_gpu=None,
                  noise_addition=0.0,
                  classifier_dropout=0.3,
+                 sampling_ratio=None
                  ):
-
+        self.sampling_ratio = sampling_ratio
         self.data_dir = data_dir
         self.model_name = model_name
         self.task_name = task_name.lower()
@@ -815,7 +816,11 @@ class Trainer:
             data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids,
                                  all_lmask_ids, noise_selector.long(), idxs.long())
 
-            if self.local_rank == -1 and train:
+            if self.sampling_ratio != None and train:
+                labels = [l.item() for l in all_label_ids]
+                weights = get_weights_classes(labels, self.sampling_ratio)
+                sampler = WeightedRandomSampler(weights=weights, replacement=True)
+            elif self.local_rank == -1 and train:
                 sampler = RandomSampler(data)
             elif train:
                 sampler = DistributedSampler(data)
@@ -892,6 +897,7 @@ if __name__ == "__main__":
     
     # ---------------- sweep -----------------
     sweep_config = {
+    "name": "ROS-GHC",
     'method': 'random'
     }
 
@@ -907,14 +913,17 @@ if __name__ == "__main__":
     parameters_dict.update({
     
     'learning_rate': {
-        'values': [0.00001,0.0001, 0.001]
+        'values': [0.00001,0.0001, 0.001, 0.01]
         },
         'classifier_dropout': {
-          'values': [0.3, 0.4, 0.5]
+          'values': [0.3, 0.4, 0.5, 0.6]
         },
         'num_train_epochs': {
             'values': [5, 10, 15, 20]
         },
+        'sampling_ratio':{
+            'values': [0.1, 0.2, 0.3, 0.4, 0.5]
+        }
 
     })
 
@@ -923,7 +932,7 @@ if __name__ == "__main__":
     sweep_config['parameters'] = parameters_dict
     sweep_id = wandb.sweep(sweep_config, project="noise-studies")
 
-    wandb.agent(sweep_id, sweep_train, count=10)
+    wandb.agent(sweep_id, sweep_train, count=50)
 
 
 

@@ -408,3 +408,16 @@ def convert_examples_to_features_ir(examples, label_list):
         ))
 
     return features
+
+def get_weights_classes(labels, ratio=1.0):
+    classes = set(labels)
+    count_per_class = [0] * len(classes)
+    for  label in labels:
+        count_per_class[label] += 1
+    weight_per_class = [0.] * len(classes)
+    for i in range(len(classes)):
+        weight_per_class[i] = float(len(labels)) / float(count_per_class[i])
+    weights = [0] * len(labels)
+    for idx, label in enumerate(labels):
+        weights[idx] = weight_per_class[label] * ratio if label==1 else weight_per_class[label] * 1-ratio
+    return weights
